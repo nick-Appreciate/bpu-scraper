@@ -1,0 +1,43 @@
+name: BPU Daily Scraper
+
+on:
+  schedule:
+    # Runs at 05:00 UTC every day.
+    # To run at 5 AM in your local timezone (e.g., CST/CDT which is UTC-5 or UTC-6),
+    # you would adjust the hour. For 5 AM CST (UTC-5), use '0 10 * * *'.
+    # For 5 AM CDT (UTC-6), use '0 11 * * *'.
+    # It's often simplest to use UTC and be aware of the conversion.
+    # Check https://crontab.guru for help with cron expressions.
+    - cron: '0 10 * * *' # Example: 5 AM CST (UTC-5)
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
+
+jobs:
+  scrape_bpu_data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18' # Or your preferred Node.js version, ensure it's compatible with your project
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run BPU Scraper
+        env:
+          BPU_USERNAME: ${{ secrets.BPU_USERNAME }}
+          BPU_PASSWORD: ${{ secrets.BPU_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          BPU_ACCOUNT_NUMBER_FALLBACK: ${{ secrets.BPU_ACCOUNT_NUMBER_FALLBACK }}
+          BPU_METER_ID_FALLBACK: ${{ secrets.BPU_METER_ID_FALLBACK }}
+          # Set HEADLESS_MODE to true for CI environments
+          HEADLESS_MODE: 'true'
+          # Set DEBUG_MODE to false or remove for CI
+          DEBUG_MODE: 'false'
+        run: npm run start:prod

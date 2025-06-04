@@ -36,7 +36,14 @@ async function scrapeAndUpload(): Promise<void> {
 
     // Initialize Puppeteer
     console.log('Launching browser...');
-    browser = await puppeteer.launch({ headless: true }); // Set to false for debugging to see the browser
+    browser = await puppeteer.launch({
+      headless: (process.env.HEADLESS_MODE !== 'false'), // Defaults to true, false if 'false'
+      args: [
+        '--disable-dev-shm-usage', // Common fix for issues in Docker/CI
+        '--no-sandbox',
+        '--disable-setuid-sandbox'
+      ]
+    });
     const page: Page = await browser.newPage();
     console.log('Browser launched and new page created.');
 
@@ -273,7 +280,6 @@ async function scrapeAndUpload(): Promise<void> {
         'Cost': cost ? parseFloat(cost) : null, // Ensure Cost is a number
       };
     }).filter(record => record !== null); // Remove null records
-
     console.log(`Prepared ${dataToUpsert.length} records for upsert.`);
 
     // --- 8. Upsert Data to Supabase ---

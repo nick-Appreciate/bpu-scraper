@@ -246,39 +246,50 @@ async function scrapeAndUpload(): Promise<void> {
     const dataToUpsert = records.map((record: any) => {
       // Normalize keys (lowercase and trim) for robust access
       const normalizedRecord: {[key: string]: any} = {};
-      for (const key in record) {
-        normalizedRecord[key.toLowerCase().trim()] = record[key];
+      for (const keyInRecord in record) {
+        normalizedRecord[keyInRecord.toLowerCase().trim()] = record[keyInRecord];
       }
 
       const BPU_ACCOUNT_NUMBER_FALLBACK = process.env.BPU_ACCOUNT_NUMBER;
       const BPU_METER_ID_FALLBACK = process.env.BPU_METER_ID;
 
-      const accountNumber = normalizedRecord['account number'] || normalizedRecord['account'] || BPU_ACCOUNT_NUMBER_FALLBACK;
-      const meterId = normalizedRecord['meter'] || normalizedRecord['meter id'] || BPU_METER_ID_FALLBACK;
-      const startDateTime = normalizedRecord['start'] || normalizedRecord['start date'] || normalizedRecord['start time'];
-      const usageValue = normalizedRecord['ccf'] || normalizedRecord['usage'] || normalizedRecord['consumption'];
-      const uom = "CCF"; // Assuming water usage from 'All Water' is in CCF
-      const cost = normalizedRecord['$'] || normalizedRecord['cost'] || normalizedRecord['estimated cost'];
-      const name = normalizedRecord['name'] || normalizedRecord['meter name']; // Or any other relevant field
+      // Extract data using known CSV headers (after normalization)
+      const accountNumber = normalizedRecord['account number'] || BPU_ACCOUNT_NUMBER_FALLBACK;
+      const meterId = normalizedRecord['meter'] || BPU_METER_ID_FALLBACK;
+      const startDateTimeString = normalizedRecord['start'];
+      const name = normalizedRecord['name'];
+      const location = normalizedRecord['location'];
+      const address = normalizedRecord['address'];
+      const estimatedIndicator = normalizedRecord['estimated indicator'];
+      const ccfValueFromCsv = normalizedRecord['ccf']; // Raw usage string from CSV 'CCF' column
+      const costStringFromCsv = normalizedRecord['$']; // Raw cost string from CSV '$' column
 
-      if (!accountNumber || !meterId || !startDateTime) {
+      // Validate essential fields for primary key
+      if (!accountNumber || !meterId || !startDateTimeString) {
         console.warn(
           `Skipping record due to missing primary key components. ` +
-          `Account: ${accountNumber}, Meter: ${meterId}, Start: ${startDateTime}. ` +
+          `Account: ${accountNumber}, Meter: ${meterId}, Start: ${startDateTimeString}. ` +
           `Original record: ${JSON.stringify(record)}`
         );
         return null; // Skip this record
       }
 
-      return {
+      // Prepare data for Supabase, matching Supabase column names
+      const supabaseData = {
+        'Start': new Date(startDateTimeString).toISOString(),
         'Account Number': accountNumber,
-        'Name': name, // May be null if not present
+        'Name': name,
         'Meter': meterId,
-        'Start': new Date(startDateTime).toISOString(),
-        'UOM': uom, // May be null
-        'Usage': usageValue ? parseFloat(usageValue) : null, // Ensure Usage is a number
-        'Cost': cost ? parseFloat(cost) : null, // Ensure Cost is a number
+        'Location': location,
+        'Address': address,
+        'Estimated Indicator': estimatedIndicator,
+        'CCF': ccfValueFromCsv, // Map raw CSV 'CCF' (usage string) to Supabase 'CCF' (text) column
+        '$': costStringFromCsv,   // Map raw CSV '$' (cost string) to Supabase '$' (text) column
+        'UOM': 'CCF', // Unit of Measure
+        'Usage': ccfValueFromCsv ? parseFloat(ccfValueFromCsv) : null, // Numeric usage to Supabase 'Usage' (numeric) column
+        'Cost': costStringFromCsv ? parseFloat(costStringFromCsv.replace('$', '')) : null, // Numeric cost to Supabase 'Cost' (numeric) column
       };
+      return supabaseData;
     }).filter(record => record !== null); // Remove null records
     console.log(`Prepared ${dataToUpsert.length} records for upsert.`);
 

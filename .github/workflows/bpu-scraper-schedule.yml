@@ -41,3 +41,11 @@ jobs:
           # Set DEBUG_MODE to false or remove for CI
           DEBUG_MODE: 'false'
         run: npm run start:prod
+
+      - name: Upload Downloaded CSV
+        if: always() # Ensures this step runs even if the scraper script fails
+        uses: actions/upload-artifact@v4 # Using v4, ensure compatibility or use v3
+        with:
+          name: bpu-downloaded-csv
+          path: ./downloads/Usage.csv # Assuming the CSV is named Usage.csv in the downloads folder
+          retention-days: 7 # Optional: Keeps the artifact for 7 days

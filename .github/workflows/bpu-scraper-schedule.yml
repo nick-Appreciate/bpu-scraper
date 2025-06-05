@@ -28,24 +28,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # - name: Run BPU Scraper # Temporarily commented out for Slack test
-      #   env:
-      #     BPU_USERNAME: ${{ secrets.BPU_USERNAME }}
-      #     BPU_PASSWORD: ${{ secrets.BPU_PASSWORD }}
-      #     SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      #     SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-      #     BPU_ACCOUNT_NUMBER_FALLBACK: ${{ secrets.BPU_ACCOUNT_NUMBER_FALLBACK }}
-      #     BPU_METER_ID_FALLBACK: ${{ secrets.BPU_METER_ID_FALLBACK }}
-      #     # Set HEADLESS_MODE to true for CI environments
-      #     HEADLESS_MODE: 'true'
-      #     # Set DEBUG_MODE to false or remove for CI
-      #     DEBUG_MODE: 'false'
-      #   run: npm run start:prod
-
-      - name: Simulate Failure for Slack Test
-        run: |
-          echo "This step is designed to fail to test Slack notification."
-          exit 1
+      - name: Run BPU Scraper
+        env:
+          BPU_USERNAME: ${{ secrets.BPU_USERNAME }}
+          BPU_PASSWORD: ${{ secrets.BPU_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          BPU_ACCOUNT_NUMBER_FALLBACK: ${{ secrets.BPU_ACCOUNT_NUMBER_FALLBACK }}
+          BPU_METER_ID_FALLBACK: ${{ secrets.BPU_METER_ID_FALLBACK }}
+          # Set HEADLESS_MODE to true for CI environments
+          HEADLESS_MODE: 'true'
+          # Set DEBUG_MODE to false or remove for CI
+          DEBUG_MODE: 'false'
+        run: npm run start:prod
 
       - name: Upload Downloaded CSV
         if: always() # Ensures this step runs even if the scraper script fails

@@ -49,3 +49,15 @@ jobs:
           name: bpu-downloaded-csv
           path: ./downloads/Usage.csv # Assuming the CSV is named Usage.csv in the downloads folder
           retention-days: 7 # Optional: Keeps the artifact for 7 days
+
+      - name: Send Slack Notification
+        if: always() # Ensures this step runs regardless of previous steps' status
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_USERNAME: "GitHub Actions BPU Scraper"
+          SLACK_ICON_EMOJI: ":robot_face:"
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_MESSAGE: "BPU Scraper daily run status: ${{ job.status }}. GitHub Actions Log: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }} | View App: https://appreciate-frontend.vercel.app/sign-in?redirectedFrom=%2Ftasks"
+          SLACK_TITLE: "BPU Scraper Job Status"
+          SLACK_FOOTER: "GitHub Actions | ${{ github.repository }}"

@@ -66,12 +66,37 @@ async function scrapeAndUpload(): Promise<void> {
 
     // Click login button and wait for navigation
     console.log('Clicking login button...');
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 60000 }), // Wait for navigation to complete
-      page.click('button.loginBtn'),
-    ]);
-    console.log('Login successful, navigated to dashboard/next page.');
-    console.log('Current page URL after login:', page.url());
+    console.log('Current page URL before login click:', page.url());
+
+    try {
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 90000 }), // Increased timeout, changed to networkidle2
+        page.click('button.loginBtn'),
+      ]);
+      console.log('Login successful, navigated to dashboard/next page.');
+      console.log('Current page URL after login and navigation:', page.url());
+      const postLoginScreenshotPath = path.join(__dirname, '..', 'screenshots', `post_login_success_${Date.now()}.png`);
+      // Ensure screenshots directory exists
+      await fs.mkdir(path.dirname(postLoginScreenshotPath), { recursive: true });
+      await page.screenshot({ path: postLoginScreenshotPath as `${string}.png`, fullPage: true });
+      console.log(`Screenshot after successful login saved to ${postLoginScreenshotPath}`);
+
+    } catch (loginError) {
+      console.error('Error during login click or subsequent navigation:', loginError);
+      const loginErrorScreenshotPath = path.join(__dirname, '..', 'screenshots', `login_attempt_error_${Date.now()}.png`);
+      // Ensure screenshots directory exists
+      await fs.mkdir(path.dirname(loginErrorScreenshotPath), { recursive: true });
+      // Attempt to take a screenshot, page might be in a weird state
+      try {
+        await page.screenshot({ path: loginErrorScreenshotPath as `${string}.png`, fullPage: true });
+        console.log(`Screenshot during login error saved to ${loginErrorScreenshotPath}`);
+        console.error('Page URL at login error:', page.url());
+        console.error('Page HTML at the time of login error:\n', (await page.content()).substring(0, 5000));
+      } catch (screenshotError) {
+        console.error('Could not take screenshot during login error:', screenshotError);
+      }
+      throw loginError; // Re-throw the error to stop the script
+    }
 
     // --- 2. Navigate to Data Section (via Choose Property and All Meters) ---
     // Click "Choose Property" button

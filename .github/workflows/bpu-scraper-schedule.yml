@@ -50,14 +50,14 @@ jobs:
           path: ./downloads/Usage.csv # Assuming the CSV is named Usage.csv in the downloads folder
           retention-days: 7 # Optional: Keeps the artifact for 7 days
 
-      - name: Send Slack Notification
-        if: always() # Ensures this step runs regardless of previous steps' status
+      - name: Send Failure Notification to Slack
+        if: failure() # Only run this step if the job has failed
         uses: rtCamp/action-slack-notify@v2
         env:
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_USERNAME: "GitHub Actions BPU Scraper"
-          SLACK_ICON_EMOJI: ":robot_face:"
-          SLACK_COLOR: ${{ job.status }}
-          SLACK_MESSAGE: "BPU Scraper daily run status: ${{ job.status }}. GitHub Actions Log: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }} | View App: https://appreciate-frontend.vercel.app/sign-in?redirectedFrom=%2Ftasks"
-          SLACK_TITLE: "BPU Scraper Job Status"
+          SLACK_USERNAME: "BPU Scraper Alert"
+          SLACK_ICON_EMOJI: ":rotating_light:"
+          SLACK_COLOR: "danger" # Explicitly set to red, or use ${{ job.status }} which should be 'failure'
+          SLACK_TITLE: "URGENT: BPU Scraper Failed!"
+          SLACK_MESSAGE: "The BPU data scraper job has FAILED. :alert:\nImmediate attention may be required.\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Action Log> | <https://appreciate-frontend.vercel.app/sign-in?redirectedFrom=%2Ftasks|View App>"
           SLACK_FOOTER: "GitHub Actions | ${{ github.repository }}"

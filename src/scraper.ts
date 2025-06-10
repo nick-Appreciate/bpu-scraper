@@ -81,6 +81,21 @@ async function scrapeAndUpload(): Promise<void> {
       await page.screenshot({ path: postLoginScreenshotPath as `${string}.png`, fullPage: true });
       console.log(`Screenshot after successful login saved to ${postLoginScreenshotPath}`);
 
+      // NEW: Wait for the "Loading Data" page to finish and navigate/update
+      if (page.url().includes('/Integration/LoginActions')) {
+        console.log('On LoginActions page, waiting for navigation to the actual dashboard...');
+        try {
+          // This assumes a proper navigation occurs.
+          // If it's a client-side update, waitForSelector for a dashboard-specific element is better.
+          await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 60000 }); // Wait for the next full navigation
+          console.log('Navigated from LoginActions. New URL:', page.url());
+        } catch (e) {
+          console.warn('Timed out waiting for navigation from LoginActions, will proceed to check for selector. Current URL:', page.url());
+          // If waitForNavigation times out, it might be a client-side render.
+          // The next waitForSelector will then act as the primary wait.
+        }
+      }
+
     } catch (loginError) {
       console.error('Error during login click or subsequent navigation:', loginError);
       const loginErrorScreenshotPath = path.join(__dirname, '..', 'screenshots', `login_attempt_error_${Date.now()}.png`);
@@ -103,7 +118,7 @@ async function scrapeAndUpload(): Promise<void> {
     const choosePropertySelector = 'a#choosePropertyBtn';
     console.log(`Waiting for Choose Property button: ${choosePropertySelector}`);
     try {
-      await page.waitForSelector(choosePropertySelector, { visible: true, timeout: 60000 });
+      await page.waitForSelector(choosePropertySelector, { visible: true, timeout: 90000 }); // Increased timeout
       console.log('Clicking Choose Property button...');
       await page.click(choosePropertySelector);
       console.log('Clicked "Choose Property". Current URL:', page.url());

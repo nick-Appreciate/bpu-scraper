@@ -247,8 +247,8 @@ async function scrapeAndUpload(): Promise<void> {
     supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY!); // Use the service role key
     console.log('Supabase client initialized.');
 
-    // Initialize Puppeteer with enhanced stealth features
-    console.log('Launching browser with stealth configuration...');
+    // Initialize Puppeteer with enhanced stealth features and cookie support
+    console.log('Launching browser with stealth configuration and cookie support...');
     browser = await puppeteer.launch({
       headless: (process.env.HEADLESS_MODE !== 'false'), // Defaults to true, false if 'false'
       args: [
@@ -275,7 +275,12 @@ async function scrapeAndUpload(): Promise<void> {
         '--no-pings',
         '--password-store=basic',
         '--use-mock-keychain',
-        '--disable-component-extensions-with-background-pages'
+        '--disable-component-extensions-with-background-pages',
+        // CRITICAL: Cookie handling arguments to fix "You must enable cookies" error
+        '--enable-cookies',
+        '--allow-running-insecure-content',
+        '--disable-site-isolation-trials',
+        '--disable-features=VizDisplayCompositor,VizServiceDisplay'
       ]
     });
     const page: Page = await browser.newPage();
@@ -283,6 +288,25 @@ async function scrapeAndUpload(): Promise<void> {
     // Enhanced stealth configuration
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.setViewport({ width: 1366, height: 768 });
+    
+    // CRITICAL: Enable cookies and session storage explicitly
+    await page.setCookie();
+    await page.evaluateOnNewDocument(() => {
+      // Ensure cookies are enabled in the browser context
+      Object.defineProperty(navigator, 'cookieEnabled', {
+        get: () => true
+      });
+    });
+    
+    // Set additional headers to ensure proper session handling
+    await page.setExtraHTTPHeaders({
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'DNT': '1',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1'
+    });
     
     // Hide webdriver property and other automation indicators
     await page.evaluateOnNewDocument(() => {
@@ -385,6 +409,37 @@ async function scrapeAndUpload(): Promise<void> {
       
       console.log('Login successful!');
       console.log('Current page URL after login:', page.url());
+      
+      // CRITICAL: Debug cookie and session state after login
+      console.log('🍪 Debugging cookie and session state after login...');
+      const cookies = await page.cookies();
+      console.log(`Found ${cookies.length} cookies:`);
+      cookies.forEach((cookie, index) => {
+        console.log(`  Cookie ${index + 1}: ${cookie.name} = ${cookie.value.substring(0, 50)}${cookie.value.length > 50 ? '...' : ''} (domain: ${cookie.domain})`);
+      });
+      
+      // Check if cookies are enabled in the page context
+      const cookieEnabled = await page.evaluate(() => navigator.cookieEnabled);
+      console.log(`Navigator.cookieEnabled: ${cookieEnabled}`);
+      
+      // Check for any cookie-related warnings or errors on the page
+      const pageContent = await page.content();
+      if (pageContent.includes('enable cookies') || pageContent.includes('cookie') || pageContent.includes('You must enable')) {
+        console.warn('⚠️  Page contains cookie-related warnings!');
+        const cookieWarnings = await page.evaluate(() => {
+          const warnings: string[] = [];
+          const elements = document.querySelectorAll('*');
+          elements.forEach(el => {
+            const text = el.textContent || '';
+            if (text.toLowerCase().includes('cookie') || text.toLowerCase().includes('enable cookies')) {
+              warnings.push(text.trim());
+            }
+          });
+          return warnings.slice(0, 5); // Limit to first 5 warnings
+        });
+        console.warn('Cookie-related warnings found:', cookieWarnings);
+      }
+      
       const postLoginScreenshotPath = path.join(__dirname, '..', 'screenshots', `post_login_success_${Date.now()}.png`);
       // Ensure screenshots directory exists
       await fs.mkdir(path.dirname(postLoginScreenshotPath), { recursive: true });

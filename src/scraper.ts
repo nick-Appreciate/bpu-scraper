@@ -58,23 +58,71 @@ async function scrapeAndUpload(): Promise<void> {
     await page.waitForSelector('button.loginBtn', { visible: true });
     console.log('Login form elements found.');
 
-    // Type credentials
+    // Type credentials with human-like delays
     console.log('Typing username...');
-    await page.type('#LoginEmail', BPU_USERNAME!);
+    await page.type('#LoginEmail', BPU_USERNAME!, { delay: 50 });
     console.log('Typing password...');
-    await page.type('#LoginPassword', BPU_PASSWORD!);
+    await page.type('#LoginPassword', BPU_PASSWORD!, { delay: 50 });
+
+    // Wait a moment before login attempt to appear more human-like
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Click login button and wait for navigation
-    console.log('Clicking login button...');
+    console.log('Attempting login...');
     console.log('Current page URL before login click:', page.url());
 
     try {
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 90000 }), // Increased timeout, changed to networkidle2
-        page.click('button.loginBtn'),
-      ]);
-      console.log('Login successful, navigated to dashboard/next page.');
-      console.log('Current page URL after login and navigation:', page.url());
+      // Check if reCAPTCHA is present
+      const recaptchaFrame = await page.$('iframe[src*="recaptcha"]');
+      if (recaptchaFrame) {
+        console.log('reCAPTCHA detected - this may cause login issues in automated environments');
+      }
+
+      // Try form submission approach (more reliable than button click)
+      await page.evaluate(() => {
+        const form = document.querySelector('form') as HTMLFormElement;
+        if (form) {
+          form.submit();
+        } else {
+          // Fallback to button click if no form found
+          const button = document.querySelector('button.loginBtn') as HTMLButtonElement;
+          if (button) {
+            button.click();
+          }
+        }
+      });
+
+      // Wait for login success indicators with multiple detection methods
+      console.log('Waiting for login success indicators...');
+      await page.waitForFunction(
+        () => {
+          // Check for URL change (most reliable)
+          if (window.location.href !== 'https://mymeter.bpu.com/') {
+            return true;
+          }
+          
+          // Check for dashboard elements
+          if (document.querySelector('#choosePropertyBtn') || 
+              document.querySelector('.dashboard') ||
+              document.querySelector('[href*="dashboard"]') ||
+              document.querySelector('.property-selector') ||
+              document.querySelector('#propertySelect')) {
+            return true;
+          }
+          
+          // Check if login form disappeared (indicates success)
+          const loginForm = document.querySelector('#LoginEmail');
+          if (!loginForm || window.getComputedStyle(loginForm).display === 'none') {
+            return true;
+          }
+          
+          return false;
+        },
+        { timeout: 45000 }
+      );
+      
+      console.log('Login successful!');
+      console.log('Current page URL after login:', page.url());
       const postLoginScreenshotPath = path.join(__dirname, '..', 'screenshots', `post_login_success_${Date.now()}.png`);
       // Ensure screenshots directory exists
       await fs.mkdir(path.dirname(postLoginScreenshotPath), { recursive: true });
@@ -97,7 +145,35 @@ async function scrapeAndUpload(): Promise<void> {
       }
 
     } catch (loginError) {
-      console.error('Error during login click or subsequent navigation:', loginError);
+      console.log('Login attempt failed, checking for error messages...');
+      
+      // Check for actual login error messages (not informational text)
+      const errorElements = await page.$$('.alert-danger, .error, .validation-summary-errors, .field-validation-error');
+      if (errorElements.length > 0) {
+        const errorText = await page.evaluate(() => {
+          const errors = document.querySelectorAll('.alert-danger, .error, .validation-summary-errors, .field-validation-error');
+          return Array.from(errors)
+            .map(el => el.textContent?.trim())
+            .filter(Boolean)
+            .filter(text => {
+              // Filter out informational messages that aren't actual errors
+              if (!text) return false;
+              const lowerText = text.toLowerCase();
+              return !lowerText.includes('remember me') && 
+                     !lowerText.includes('keep you logged in') &&
+                     !lowerText.includes('public computers');
+            });
+        });
+        
+        if (errorText.length > 0) {
+          console.error('Actual login error messages found:', errorText);
+          throw new Error(`Login failed with errors: ${errorText.join(', ')}`);
+        } else {
+          console.log('Only informational messages found, not actual errors');
+        }
+      }
+      
+      console.error('Error during login attempt:', loginError);
       const loginErrorScreenshotPath = path.join(__dirname, '..', 'screenshots', `login_attempt_error_${Date.now()}.png`);
       // Ensure screenshots directory exists
       await fs.mkdir(path.dirname(loginErrorScreenshotPath), { recursive: true });
@@ -110,7 +186,7 @@ async function scrapeAndUpload(): Promise<void> {
       } catch (screenshotError) {
         console.error('Could not take screenshot during login error:', screenshotError);
       }
-      throw loginError; // Re-throw the error to stop the script
+      throw new Error('Login attempt failed - no navigation or expected elements found');
     }
 
     // --- 2. Navigate to Data Section (via Choose Property and All Meters) ---

@@ -155,7 +155,7 @@ async function handlePostLoginCaptcha(page: Page, captchaApiKey?: string, maxRet
         
         // Look for login form or continue button
         const loginForm = await page.$('#loginForm, form[action*="login"], form[action*="Login"], form');
-        const continueButton = await page.$('button[type="submit"], input[type="submit"], button:contains("Continue"), button:contains("Login")');
+        const continueButton = await page.$('button[type="submit"], input[type="submit"], button[value*="Continue"], button[value*="Login"], input[value*="Continue"], input[value*="Login"]');
         
         if (loginForm) {
           console.log('📝 Found login form - resubmitting after CAPTCHA solution...');

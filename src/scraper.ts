@@ -1,7 +1,9 @@
-import puppeteer, { Browser, Page, ElementHandle } from 'puppeteer';
-import * as path from 'path';
-import * as fs from 'fs/promises';
+import puppeteer from 'puppeteer-extra';
+import RecaptchaPlugin from 'puppeteer-extra-plugin-recaptcha';
+import { Browser, Page, ElementHandle } from 'puppeteer';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import { config } from 'dotenv';
 import { parse } from 'csv-parse/sync'; // For parsing CSV data
 
@@ -13,6 +15,127 @@ const BPU_PASSWORD = process.env.BPU_PASSWORD;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY; // Kept for potential other uses, but service key is primary for this script
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const CAPTCHA_API_KEY = process.env.CAPTCHA_API_KEY; // 2captcha API key
+
+// Configure puppeteer-extra with recaptcha plugin
+if (CAPTCHA_API_KEY) {
+  puppeteer.use(
+    RecaptchaPlugin({
+      provider: {
+        id: '2captcha',
+        token: CAPTCHA_API_KEY
+      },
+      visualFeedback: true // colorize reCAPTCHAs (violet = detected, green = solved)
+    })
+  );
+  console.log('CAPTCHA solving plugin configured with 2captcha');
+} else {
+  console.warn('CAPTCHA_API_KEY not set - CAPTCHA solving will be disabled');
+}
+
+/**
+ * Handle post-login CAPTCHA challenges that may appear after successful login
+ * This includes detecting JSON error responses and various CAPTCHA types
+ */
+async function handlePostLoginCaptcha(page: Page, captchaApiKey?: string): Promise<void> {
+  try {
+    // Check for CAPTCHA-related content in the page
+    const pageContent = await page.content();
+    const pageText = await page.evaluate(() => document.body.textContent || '');
+    
+    // Check for JSON error responses indicating CAPTCHA requirement
+    if (pageContent.includes('Please provide a valid login captcha') ||
+        pageContent.includes('LoginErrorMessage') ||
+        pageText.includes('Please provide a valid login captcha')) {
+      console.log('🚨 Post-login CAPTCHA challenge detected!');
+      console.log('The site is requesting CAPTCHA verification after login.');
+      
+      // Take a screenshot for debugging
+      const captchaScreenshotPath = path.join(__dirname, '..', 'screenshots', `captcha_challenge_${Date.now()}.png`);
+      await fs.mkdir(path.dirname(captchaScreenshotPath), { recursive: true });
+      await page.screenshot({ path: captchaScreenshotPath as `${string}.png`, fullPage: true });
+      console.log(`CAPTCHA challenge screenshot saved to ${captchaScreenshotPath}`);
+      
+      if (!captchaApiKey) {
+        console.error('❌ CAPTCHA_API_KEY not configured. Cannot solve CAPTCHA automatically.');
+        console.error('💡 To fix this:');
+        console.error('   1. Sign up at https://2captcha.com');
+        console.error('   2. Add funds to your account ($3 for 1000 CAPTCHAs)');
+        console.error('   3. Get your API key from the dashboard');
+        console.error('   4. Add CAPTCHA_API_KEY=your_api_key to your .env file or GitHub secrets');
+        throw new Error('CAPTCHA challenge detected but no API key configured for solving');
+      }
+      
+      // Try to navigate back to the main page to trigger CAPTCHA display
+      console.log('Attempting to navigate to main page to display CAPTCHA...');
+      await page.goto('https://mymeter.bpu.com/', { waitUntil: 'networkidle0' });
+      
+      // Wait a moment for the page to load
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Look for various CAPTCHA types
+      const recaptchaElements = await page.$$('iframe[src*="recaptcha"], div[class*="recaptcha"], div[id*="recaptcha"]');
+      const hcaptchaElements = await page.$$('iframe[src*="hcaptcha"], div[class*="hcaptcha"], div[id*="hcaptcha"]');
+      const captchaImages = await page.$$('img[src*="captcha"], img[alt*="captcha"], img[title*="captcha"]');
+      
+      if (recaptchaElements.length > 0) {
+        console.log(`Found ${recaptchaElements.length} reCAPTCHA element(s), attempting to solve...`);
+        await page.solveRecaptchas();
+        console.log('reCAPTCHA solving completed');
+      } else if (hcaptchaElements.length > 0) {
+        console.log(`Found ${hcaptchaElements.length} hCaptcha element(s), attempting to solve...`);
+        // Note: puppeteer-extra-plugin-recaptcha also supports hCaptcha
+        await page.solveRecaptchas();
+        console.log('hCaptcha solving completed');
+      } else if (captchaImages.length > 0) {
+        console.log(`Found ${captchaImages.length} image CAPTCHA(s)`);
+        console.warn('Image CAPTCHAs require manual handling or specialized solving services');
+        // For image CAPTCHAs, we would need to implement custom solving logic
+        // This is more complex and may require different API endpoints
+      } else {
+        console.log('No visible CAPTCHA elements found on the page');
+        console.log('The CAPTCHA challenge may be triggered by subsequent actions');
+      }
+      
+      // Wait for CAPTCHA solution to be processed
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // Try to proceed with login again if needed
+      console.log('Checking if CAPTCHA was solved successfully...');
+      const updatedContent = await page.content();
+      if (updatedContent.includes('Please provide a valid login captcha')) {
+        console.warn('CAPTCHA challenge may still be present after solving attempt');
+      } else {
+        console.log('CAPTCHA appears to have been resolved');
+      }
+      
+    } else {
+      // Check for standard reCAPTCHA elements even if no error message
+      const recaptchaElements = await page.$$('iframe[src*="recaptcha"], div[class*="recaptcha"], div[id*="recaptcha"]');
+      if (recaptchaElements.length > 0 && captchaApiKey) {
+        console.log(`Found ${recaptchaElements.length} reCAPTCHA element(s), attempting to solve...`);
+        await page.solveRecaptchas();
+        console.log('reCAPTCHA solving completed');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } else {
+        console.log('No CAPTCHA challenges detected on post-login page');
+      }
+    }
+    
+  } catch (captchaError) {
+    console.warn('Error during post-login CAPTCHA handling:', captchaError);
+    // Take a screenshot for debugging
+    try {
+      const errorScreenshotPath = path.join(__dirname, '..', 'screenshots', `captcha_error_${Date.now()}.png`);
+      await fs.mkdir(path.dirname(errorScreenshotPath), { recursive: true });
+      await page.screenshot({ path: errorScreenshotPath as `${string}.png`, fullPage: true });
+      console.log(`CAPTCHA error screenshot saved to ${errorScreenshotPath}`);
+    } catch (screenshotError) {
+      console.warn('Could not take CAPTCHA error screenshot:', screenshotError);
+    }
+    // Don't throw - continue execution as CAPTCHA solving failure shouldn't stop the entire process
+  }
+}
 
 async function scrapeAndUpload(): Promise<void> {
   console.log('BPU Scraper starting...');
@@ -24,6 +147,10 @@ async function scrapeAndUpload(): Promise<void> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     console.error('Supabase URL or service_role key (SUPABASE_SERVICE_KEY) not set in .env file. The service role key is required for this script to bypass RLS.');
     process.exit(1);
+  }
+  if (!CAPTCHA_API_KEY) {
+    console.warn('CAPTCHA_API_KEY not set in .env file. CAPTCHA solving will be disabled.');
+    console.warn('If you encounter CAPTCHA challenges, get a 2captcha API key from https://2captcha.com');
   }
 
   let browser: Browser | null = null;
@@ -129,6 +256,10 @@ async function scrapeAndUpload(): Promise<void> {
       await page.screenshot({ path: postLoginScreenshotPath as `${string}.png`, fullPage: true });
       console.log(`Screenshot after successful login saved to ${postLoginScreenshotPath}`);
 
+      // Check for post-login CAPTCHA challenges
+      console.log('Checking for post-login CAPTCHA challenges...');
+      await handlePostLoginCaptcha(page, CAPTCHA_API_KEY);
+
       // NEW: Wait for the "Loading Data" page to finish and navigate/update
       if (page.url().includes('/Integration/LoginActions')) {
         console.log('On LoginActions page, waiting for navigation to the actual dashboard...');
@@ -190,6 +321,10 @@ async function scrapeAndUpload(): Promise<void> {
     }
 
     // --- 2. Navigate to Data Section (via Choose Property and All Meters) ---
+    // Check for and solve any CAPTCHAs before clicking Choose Property
+    console.log('Checking for CAPTCHAs before Choose Property click...');
+    await handlePostLoginCaptcha(page, CAPTCHA_API_KEY);
+
     // Click "Choose Property" button
     const choosePropertySelector = 'a#choosePropertyBtn';
     console.log(`Waiting for Choose Property button: ${choosePropertySelector}`);
@@ -200,11 +335,51 @@ async function scrapeAndUpload(): Promise<void> {
       console.log('Clicked "Choose Property". Current URL:', page.url());
     } catch (error) {
       console.error(`Error waiting for or clicking Choose Property button (${choosePropertySelector}):`, error);
-      const screenshotPath = path.join(__dirname, '..', 'screenshots', `chooseProperty_error_${Date.now()}.png`);
-      await page.screenshot({ path: screenshotPath as `${string}.png`, fullPage: true });
-      console.log(`Screenshot saved to ${screenshotPath}`);
-      const pageContent = await page.content();
-      console.error('Page HTML at the time of error:\n', pageContent.substring(0, 5000));
+      
+      // Check for CAPTCHA-related errors and attempt to handle them
+      try {
+        const pageContent = await page.content();
+        const pageText = await page.evaluate(() => document.body.textContent || '');
+        
+        // Check if this is a CAPTCHA-related error
+        if (pageContent.includes('captcha') || pageText.includes('captcha') || 
+            pageContent.includes('Please provide a valid login captcha') ||
+            pageText.includes('Please provide a valid login captcha') ||
+            pageContent.includes('LoginErrorMessage')) {
+          console.error('🚨 CAPTCHA challenge detected during Choose Property step!');
+          
+          // Take a screenshot for debugging
+          const screenshotPath = path.join(__dirname, '..', 'screenshots', `chooseProperty_error_${Date.now()}.png`);
+          await page.screenshot({ path: screenshotPath as `${string}.png`, fullPage: true });
+          console.log(`Screenshot saved to ${screenshotPath}`);
+          console.error('Page HTML at the time of error:\n', pageContent.substring(0, 1000));
+          
+          // Attempt to handle the CAPTCHA challenge
+          console.log('Attempting to handle CAPTCHA challenge...');
+          await handlePostLoginCaptcha(page, CAPTCHA_API_KEY);
+          
+          // After CAPTCHA handling, try to wait for the Choose Property button again
+          console.log('Retrying Choose Property button after CAPTCHA handling...');
+          try {
+            await page.waitForSelector(choosePropertySelector, { visible: true, timeout: 30000 });
+            console.log('Choose Property button found after CAPTCHA handling, clicking...');
+            await page.click(choosePropertySelector);
+            console.log('Successfully clicked Choose Property after CAPTCHA handling');
+            return; // Success, exit the catch block
+          } catch (retryError) {
+            console.error('Choose Property button still not available after CAPTCHA handling:', retryError);
+          }
+        } else {
+          // Not a CAPTCHA error, take screenshot for debugging
+          const screenshotPath = path.join(__dirname, '..', 'screenshots', `chooseProperty_error_${Date.now()}.png`);
+          await page.screenshot({ path: screenshotPath as `${string}.png`, fullPage: true });
+          console.log(`Screenshot saved to ${screenshotPath}`);
+          console.error('Page HTML at the time of error:\n', pageContent.substring(0, 1000));
+        }
+      } catch (debugError) {
+        console.error('Error during Choose Property error handling:', debugError);
+      }
+      
       throw error;
     }
 

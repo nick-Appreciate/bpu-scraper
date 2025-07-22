@@ -247,22 +247,23 @@ async function scrapeAndUpload(): Promise<void> {
     supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY!); // Use the service role key
     console.log('Supabase client initialized.');
 
-    // Initialize Puppeteer with enhanced stealth features and cookie support
-    console.log('Launching browser with stealth configuration and cookie support...');
+    // Initialize Puppeteer with advanced anti-bot detection bypass
+    console.log('Launching browser with advanced stealth configuration and anti-bot detection bypass...');
     browser = await puppeteer.launch({
       headless: (process.env.HEADLESS_MODE !== 'false'), // Defaults to true, false if 'false'
+      // Use persistent user data directory to maintain session across restarts
+      userDataDir: process.env.HEADLESS_MODE !== 'false' ? undefined : './browser-data',
       args: [
         '--disable-dev-shm-usage', // Common fix for issues in Docker/CI
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        // Enhanced stealth and anti-detection arguments
+        // ADVANCED: Enhanced stealth and anti-detection arguments
         '--disable-blink-features=AutomationControlled',
-        '--disable-features=VizDisplayCompositor',
+        '--disable-features=VizDisplayCompositor,VizServiceDisplay,TranslateUI',
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
         '--disable-renderer-backgrounding',
         '--disable-web-security',
-        '--disable-features=TranslateUI',
         '--disable-ipc-flooding-protection',
         '--no-first-run',
         '--no-default-browser-check',
@@ -276,60 +277,267 @@ async function scrapeAndUpload(): Promise<void> {
         '--password-store=basic',
         '--use-mock-keychain',
         '--disable-component-extensions-with-background-pages',
-        // CRITICAL: Cookie handling arguments to fix "You must enable cookies" error
+        // CRITICAL: Advanced cookie and session handling
         '--enable-cookies',
         '--allow-running-insecure-content',
         '--disable-site-isolation-trials',
-        '--disable-features=VizDisplayCompositor,VizServiceDisplay'
+        // ADVANCED: Additional anti-detection measures
+        '--disable-features=VizDisplayCompositor,VizServiceDisplay,AudioServiceOutOfProcess',
+        '--disable-background-networking',
+        '--disable-background-sync',
+        '--disable-device-discovery-notifications',
+        '--disable-gpu',
+        '--disable-gpu-sandbox',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
+        '--disable-plugins-discovery',
+        '--disable-preconnect',
+        '--disable-print-preview',
+        '--hide-scrollbars',
+        '--mute-audio',
+        '--no-zygote',
+        '--disable-accelerated-2d-canvas',
+        '--disable-accelerated-jpeg-decoding',
+        '--disable-accelerated-mjpeg-decode',
+        '--disable-accelerated-video-decode',
+        '--disable-gpu-memory-buffer-compositor-resources',
+        '--disable-gpu-memory-buffer-video-frames'
       ]
     });
     const page: Page = await browser.newPage();
     
-    // Enhanced stealth configuration
+    // ADVANCED: Configure sophisticated anti-detection and browser fingerprinting evasion
+    console.log('Configuring advanced anti-detection measures and browser fingerprinting evasion...');
+    
+    // Set realistic user agent with proper OS/browser matching
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.setViewport({ width: 1366, height: 768 });
     
-    // CRITICAL: Enable cookies and session storage explicitly
-    await page.setCookie();
+    // CRITICAL: Advanced browser fingerprinting evasion with enhanced anti-detection
     await page.evaluateOnNewDocument(() => {
-      // Ensure cookies are enabled in the browser context
+      // Hide webdriver property completely
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+        configurable: true
+      });
+      
+      // Enhanced navigator properties for better browser mimicking
+      Object.defineProperty(navigator, 'platform', {
+        get: () => 'MacIntel',
+        configurable: true
+      });
+      
+      Object.defineProperty(navigator, 'vendor', {
+        get: () => 'Google Inc.',
+        configurable: true
+      });
+      
+      Object.defineProperty(navigator, 'hardwareConcurrency', {
+        get: () => 8,
+        configurable: true
+      });
+      
+      Object.defineProperty(navigator, 'deviceMemory', {
+        get: () => 8,
+        configurable: true
+      });
+      
+      // Override navigator.cookieEnabled to ensure it returns true
       Object.defineProperty(navigator, 'cookieEnabled', {
-        get: () => true
+        get: () => true,
+        configurable: true
       });
-    });
-    
-    // Set additional headers to ensure proper session handling
-    await page.setExtraHTTPHeaders({
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'DNT': '1',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1'
-    });
-    
-    // Hide webdriver property and other automation indicators
-    await page.evaluateOnNewDocument(() => {
-      // Remove webdriver property
-      delete (window as any).navigator.webdriver;
       
-      // Override the plugins property to mimic a real browser
+      // More realistic plugins array
       Object.defineProperty(navigator, 'plugins', {
-        get: () => [1, 2, 3, 4, 5]
+        get: () => ({
+          length: 3,
+          0: { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+          1: { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+          2: { name: 'Native Client', filename: 'internal-nacl-plugin' }
+        }),
+        configurable: true
       });
       
-      // Override the languages property
       Object.defineProperty(navigator, 'languages', {
-        get: () => ['en-US', 'en']
+        get: () => ['en-US', 'en'],
+        configurable: true
       });
       
-      // Override the permissions property
+      Object.defineProperty(navigator, 'language', {
+        get: () => 'en-US',
+        configurable: true
+      });
+      
+      // Canvas fingerprinting protection - override toDataURL method
+      const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+      HTMLCanvasElement.prototype.toDataURL = function(type?: string, quality?: any): string {
+        // Add slight randomization to canvas output to prevent fingerprinting
+        const context = this.getContext('2d') as CanvasRenderingContext2D | null;
+        if (context) {
+          const imageData = context.getImageData(0, 0, this.width, this.height);
+          // Add minimal noise to prevent exact fingerprinting
+          for (let i = 0; i < imageData.data.length; i += 4) {
+            if (Math.random() < 0.001) { // Very low probability to avoid visual changes
+              imageData.data[i] += Math.floor(Math.random() * 3) - 1;
+            }
+          }
+          context.putImageData(imageData, 0, 0);
+        }
+        return originalToDataURL.call(this, type, quality);
+      };
+      
+      // WebGL fingerprinting protection
+      const getParameter = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(parameter: number) {
+        if (parameter === 37445) return 'Intel Inc.';
+        if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+        if (parameter === 7936) return 'WebKit';
+        if (parameter === 7937) return 'WebKit WebGL';
+        return getParameter.apply(this, [parameter]);
+      };
+      
+      // Override permissions API to avoid detection
       const originalQuery = window.navigator.permissions.query;
-      window.navigator.permissions.query = (parameters) => (
+      window.navigator.permissions.query = (parameters: PermissionDescriptor) => (
         parameters.name === 'notifications' ?
-          Promise.resolve({ state: Notification.permission } as PermissionStatus) :
+          Promise.resolve({ 
+            state: Notification.permission,
+            name: 'notifications' as PermissionName,
+            onchange: null,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            dispatchEvent: () => false
+          } as PermissionStatus) :
           originalQuery(parameters)
       );
+      
+      // Override chrome runtime to avoid detection
+      if ((window as any).chrome) {
+        Object.defineProperty((window as any).chrome, 'runtime', {
+          get: () => ({
+            onConnect: undefined,
+            onMessage: undefined,
+            sendMessage: undefined,
+          }),
+          configurable: true
+        });
+      }
+      
+      // Override screen properties for consistency
+      Object.defineProperty(screen, 'availHeight', {
+        get: () => 768,
+        configurable: true
+      });
+      
+      Object.defineProperty(screen, 'availWidth', {
+        get: () => 1366,
+        configurable: true
+      });
+      
+      // Add timezone consistency
+      Object.defineProperty(Intl.DateTimeFormat.prototype, 'resolvedOptions', {
+        value: function() {
+          return {
+            locale: 'en-US',
+            timeZone: 'America/New_York',
+            calendar: 'gregory',
+            numberingSystem: 'latn'
+          };
+        },
+        configurable: true
+      });
+      
+      // Initialize localStorage and sessionStorage for session persistence
+      try {
+        localStorage.setItem('browser_session', 'active');
+        localStorage.setItem('session_timestamp', Date.now().toString());
+        sessionStorage.setItem('page_loaded', Date.now().toString());
+        sessionStorage.setItem('navigation_type', 'navigate');
+      } catch (e) {
+        // Ignore localStorage errors in some environments
+      }
+      
+      // Override Date.prototype.getTimezoneOffset for consistency
+      Date.prototype.getTimezoneOffset = function() {
+        return 300; // EST/EDT offset
+      };
+    });
+    
+    // CRITICAL: Enhanced cookie handling and session setup with multiple domains
+    console.log('Setting up advanced cookie handling and session configuration...');
+    
+    // Initialize cookies across multiple domain variations for better session persistence
+    const cookieDomains = ['.bpu.com', 'mymeter.bpu.com', '.mymeter.bpu.com'];
+    for (const domain of cookieDomains) {
+      await page.setCookie({
+        name: 'session_enabled',
+        value: 'true',
+        domain: domain,
+        httpOnly: false,
+        secure: false,
+        sameSite: 'Lax'
+      });
+      
+      await page.setCookie({
+        name: 'browser_session',
+        value: `session_${Date.now()}`,
+        domain: domain,
+        httpOnly: false,
+        secure: false,
+        sameSite: 'Lax'
+      });
+    }
+    
+    // Set comprehensive HTTP headers mimicking real Chrome browser behavior
+    await page.setExtraHTTPHeaders({
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Cache-Control': 'max-age=0',
+      'DNT': '1',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'Sec-Ch-Ua-Mobile': '?0',
+      'Sec-Ch-Ua-Platform': '"macOS"',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'same-origin',
+      'Sec-Fetch-User': '?1',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    });
+    
+    // Add behavioral simulation for human-like interaction patterns
+    console.log('Initializing behavioral simulation and human-like interaction patterns...');
+    
+    // Simulate human-like mouse movements and focus events
+    await page.evaluateOnNewDocument(() => {
+      // Dispatch realistic browser events
+      setTimeout(() => {
+        window.dispatchEvent(new Event('focus'));
+        document.dispatchEvent(new Event('visibilitychange'));
+        
+        // Simulate user activity
+        const mouseEvent = new MouseEvent('mousemove', {
+          bubbles: true,
+          cancelable: true,
+          clientX: Math.random() * 100 + 50,
+          clientY: Math.random() * 100 + 50
+        });
+        document.dispatchEvent(mouseEvent);
+      }, Math.random() * 1000 + 500);
+    });
+    
+    // Add random delays and mouse movements for behavioral realism
+    const humanDelay = () => new Promise(resolve => 
+      setTimeout(resolve, 1000 + Math.random() * 2000)
+    );
+    
+    // Simulate initial page interaction
+    await page.mouse.move(100 + Math.random() * 200, 100 + Math.random() * 200);
+    await page.evaluate(() => {
+      window.scrollTo(0, Math.random() * 100);
     });
     console.log('Browser launched and new page created.');
 

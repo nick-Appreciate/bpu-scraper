@@ -298,6 +298,36 @@ async function scrapeAndUpload(): Promise<void> {
         '--no-zygote',
         '--disable-accelerated-2d-canvas',
         '--disable-accelerated-jpeg-decoding',
+        // ULTRA-ADVANCED: Additional behavioral anti-detection
+        '--disable-client-side-phishing-detection',
+        '--disable-component-update',
+        '--disable-domain-reliability',
+        '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+        '--disable-ipc-flooding-protection',
+        '--disable-renderer-backgrounding',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-breakpad',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-extensions-http-throttling',
+        '--disable-field-trial-config',
+        '--disable-back-forward-cache',
+        '--disable-logging',
+        '--disable-dev-shm-usage',
+        '--force-color-profile=srgb',
+        '--disable-translate',
+        '--disable-notifications',
+        '--disable-permissions-api',
+        '--disable-web-security',
+        '--allow-running-insecure-content',
+        '--ignore-certificate-errors',
+        '--ignore-ssl-errors',
+        '--ignore-certificate-errors-spki-list',
+        '--ignore-certificate-errors-skip-list',
+        '--disable-dev-tools',
+        '--disable-auto-reload',
+        '--no-service-autorun',
+        '--disable-component-cloud-policy',
         '--disable-accelerated-mjpeg-decode',
         '--disable-accelerated-video-decode',
         '--disable-gpu-memory-buffer-compositor-resources',
@@ -541,25 +571,131 @@ async function scrapeAndUpload(): Promise<void> {
     });
     console.log('Browser launched and new page created.');
 
-    // --- 1. Login to BPU Portal ---
-    console.log('Navigating to BPU login page: https://mymeter.bpu.com/');
+    // ULTRA-ADVANCED: Simulate realistic browsing behavior before login
+    console.log('🎭 Simulating realistic browsing behavior to bypass behavioral analysis...');
+    
+    // Step 1: Visit a neutral page first to establish browsing history
+    console.log('Establishing browsing history with neutral page visit...');
+    await page.goto('https://www.google.com', { waitUntil: 'networkidle0' });
+    await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
+    
+    // Simulate realistic Google interaction
+    await page.mouse.move(200 + Math.random() * 300, 150 + Math.random() * 200);
+    await page.evaluate(() => {
+      window.scrollTo(0, Math.random() * 200);
+      // Simulate realistic user activity
+      document.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true,
+        clientX: Math.random() * window.innerWidth,
+        clientY: Math.random() * window.innerHeight
+      }));
+    });
+    
+    // Step 2: Navigate to BPU main site (not login page directly)
+    console.log('Navigating to BPU main site to establish legitimate browsing pattern...');
+    await page.goto('https://www.bpu.com/', { waitUntil: 'networkidle0' });
+    await new Promise(resolve => setTimeout(resolve, 3000 + Math.random() * 4000));
+    
+    // Simulate browsing the main site
+    await page.mouse.move(300 + Math.random() * 400, 200 + Math.random() * 300);
+    await page.evaluate(() => {
+      window.scrollTo(0, 100 + Math.random() * 300);
+      // Simulate reading behavior with multiple scroll events
+      setTimeout(() => window.scrollTo(0, 200 + Math.random() * 200), 1000);
+      setTimeout(() => window.scrollTo(0, 300 + Math.random() * 200), 2000);
+    });
+    
+    // Extended delay to simulate human reading time
+    await new Promise(resolve => setTimeout(resolve, 5000 + Math.random() * 5000));
+    
+    // Step 3: Now navigate to login page as a human would
+    console.log('🔐 Navigating to BPU login page after establishing browsing pattern...');
     await page.goto('https://mymeter.bpu.com/', { waitUntil: 'networkidle0' });
-    console.log('Login page loaded.');
+    
+    // Extended delay after page load to simulate human behavior
+    await new Promise(resolve => setTimeout(resolve, 3000 + Math.random() * 4000));
+    console.log('Login page loaded with realistic browsing simulation.');
 
-    // Wait for login form elements
+    // Wait for login form elements with realistic human-like behavior
     await page.waitForSelector('#LoginEmail', { visible: true });
     await page.waitForSelector('#LoginPassword', { visible: true });
     await page.waitForSelector('button.loginBtn', { visible: true });
     console.log('Login form elements found.');
+    
+    // ULTRA-ADVANCED: Simulate realistic human interaction patterns
+    console.log('🧠 Simulating realistic human interaction patterns...');
+    
+    // Simulate user examining the page before typing
+    await page.mouse.move(400 + Math.random() * 200, 300 + Math.random() * 100);
+    await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 2000));
+    
+    // Move mouse to email field area and hover before clicking
+    const emailField = await page.$('#LoginEmail');
+    if (emailField) {
+      const emailBox = await emailField.boundingBox();
+      if (emailBox) {
+        // Move mouse near the field first
+        await page.mouse.move(
+          emailBox.x + emailBox.width / 2 + (Math.random() - 0.5) * 20,
+          emailBox.y + emailBox.height / 2 + (Math.random() - 0.5) * 10
+        );
+        await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
+      }
+    }
+    
+    // Click and type username with realistic human patterns
+    console.log('Typing username with human-like patterns...');
+    await page.click('#LoginEmail');
+    await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
+    
+    // Type username with variable delays and occasional pauses
+    const username = BPU_USERNAME!;
+    for (let i = 0; i < username.length; i++) {
+      await page.type('#LoginEmail', username[i], { delay: 80 + Math.random() * 120 });
+      // Occasional longer pause to simulate thinking
+      if (Math.random() < 0.1) {
+        await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 700));
+      }
+    }
+    
+    // Pause before moving to password field
+    await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 1200));
+    
+    // Move mouse to password field with realistic movement
+    const passwordField = await page.$('#LoginPassword');
+    if (passwordField) {
+      const passwordBox = await passwordField.boundingBox();
+      if (passwordBox) {
+        await page.mouse.move(
+          passwordBox.x + passwordBox.width / 2 + (Math.random() - 0.5) * 20,
+          passwordBox.y + passwordBox.height / 2 + (Math.random() - 0.5) * 10
+        );
+        await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 500));
+      }
+    }
+    
+    // Click and type password with realistic patterns
+    console.log('Typing password with human-like patterns...');
+    await page.click('#LoginPassword');
+    await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 400));
+    
+    // Type password with variable delays
+    const password = BPU_PASSWORD!;
+    for (let i = 0; i < password.length; i++) {
+      await page.type('#LoginPassword', password[i], { delay: 70 + Math.random() * 100 });
+      // Occasional pause for complex passwords
+      if (Math.random() < 0.08) {
+        await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 500));
+      }
+    }
 
-    // Type credentials with human-like delays
-    console.log('Typing username...');
-    await page.type('#LoginEmail', BPU_USERNAME!, { delay: 50 });
-    console.log('Typing password...');
-    await page.type('#LoginPassword', BPU_PASSWORD!, { delay: 50 });
-
-    // Wait a moment before login attempt to appear more human-like
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // ULTRA-ADVANCED: Extended human-like delay before login attempt
+    console.log('⏳ Simulating human thinking time before login attempt...');
+    await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
+    
+    // Simulate user reviewing form before submission
+    await page.mouse.move(500 + Math.random() * 100, 400 + Math.random() * 100);
+    await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1500));
 
     // Click login button and wait for navigation
     console.log('Attempting login...');

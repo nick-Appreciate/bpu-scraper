@@ -37,11 +37,30 @@ if (CAPTCHA_API_KEY) {
  * Handle post-login CAPTCHA challenges that may appear after successful login
  * This includes detecting JSON error responses and various CAPTCHA types
  */
-async function handlePostLoginCaptcha(page: Page, captchaApiKey?: string): Promise<void> {
-  try {
-    // Check for CAPTCHA-related content in the page
-    const pageContent = await page.content();
-    const pageText = await page.evaluate(() => document.body.textContent || '');
+async function handlePostLoginCaptcha(page: Page, captchaApiKey?: string, maxRetries: number = 3): Promise<void> {
+  let retryCount = 0;
+  
+  while (retryCount < maxRetries) {
+    try {
+      // Enhanced page state debugging
+      console.log(`🔍 CAPTCHA Check Attempt ${retryCount + 1}/${maxRetries}`);
+      console.log(`Current URL: ${page.url()}`);
+      console.log(`Page title: ${await page.title()}`);
+      
+      // Check for CAPTCHA-related content in the page
+      const pageContent = await page.content();
+      const pageText = await page.evaluate(() => document.body.textContent || '');
+      
+      // Enhanced debugging - log page state
+      const pageState = await page.evaluate(() => ({
+        hasLoginForm: !!document.querySelector('#LoginEmail'),
+        hasChoosePropertyBtn: !!document.querySelector('#choosePropertyBtn'),
+        hasDashboard: !!document.querySelector('.dashboard'),
+        hasRecaptcha: !!document.querySelector('iframe[src*="recaptcha"]'),
+        bodyClasses: document.body.className,
+        visibleText: document.body.textContent?.substring(0, 200) || ''
+      }));
+      console.log('📊 Page State:', JSON.stringify(pageState, null, 2));
     
     // Check for JSON error responses indicating CAPTCHA requirement
     if (pageContent.includes('Please provide a valid login captcha') ||
@@ -70,43 +89,85 @@ async function handlePostLoginCaptcha(page: Page, captchaApiKey?: string): Promi
       console.log('Attempting to navigate to main page to display CAPTCHA...');
       await page.goto('https://mymeter.bpu.com/', { waitUntil: 'networkidle0' });
       
-      // Wait a moment for the page to load
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Wait with human-like delay
+      await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 2000));
       
       // Look for various CAPTCHA types
       const recaptchaElements = await page.$$('iframe[src*="recaptcha"], div[class*="recaptcha"], div[id*="recaptcha"]');
       const hcaptchaElements = await page.$$('iframe[src*="hcaptcha"], div[class*="hcaptcha"], div[id*="hcaptcha"]');
       const captchaImages = await page.$$('img[src*="captcha"], img[alt*="captcha"], img[title*="captcha"]');
       
+      let solvingAttempted = false;
+      
       if (recaptchaElements.length > 0) {
         console.log(`Found ${recaptchaElements.length} reCAPTCHA element(s), attempting to solve...`);
-        await page.solveRecaptchas();
-        console.log('reCAPTCHA solving completed');
+        try {
+          await page.solveRecaptchas();
+          console.log('✅ reCAPTCHA solving completed successfully');
+          solvingAttempted = true;
+        } catch (solveError: any) {
+          console.warn(`⚠️ reCAPTCHA solving failed on attempt ${retryCount + 1}:`, solveError.message);
+          if (solveError.message?.includes('ERROR_CAPTCHA_UNSOLVABLE')) {
+            console.log('💡 CAPTCHA marked as unsolvable by 2captcha - will retry with fresh page');
+            retryCount++;
+            if (retryCount < maxRetries) {
+              console.log(`🔄 Retrying CAPTCHA solving (${retryCount + 1}/${maxRetries})...`);
+              await new Promise(resolve => setTimeout(resolve, 3000 + Math.random() * 2000));
+              continue;
+            }
+          }
+          throw solveError;
+        }
       } else if (hcaptchaElements.length > 0) {
         console.log(`Found ${hcaptchaElements.length} hCaptcha element(s), attempting to solve...`);
-        // Note: puppeteer-extra-plugin-recaptcha also supports hCaptcha
-        await page.solveRecaptchas();
-        console.log('hCaptcha solving completed');
+        try {
+          await page.solveRecaptchas();
+          console.log('✅ hCaptcha solving completed successfully');
+          solvingAttempted = true;
+        } catch (solveError: any) {
+          console.warn(`⚠️ hCaptcha solving failed on attempt ${retryCount + 1}:`, solveError.message);
+          if (solveError.message?.includes('ERROR_CAPTCHA_UNSOLVABLE')) {
+            retryCount++;
+            if (retryCount < maxRetries) {
+              console.log(`🔄 Retrying CAPTCHA solving (${retryCount + 1}/${maxRetries})...`);
+              await new Promise(resolve => setTimeout(resolve, 3000 + Math.random() * 2000));
+              continue;
+            }
+          }
+          throw solveError;
+        }
       } else if (captchaImages.length > 0) {
         console.log(`Found ${captchaImages.length} image CAPTCHA(s)`);
         console.warn('Image CAPTCHAs require manual handling or specialized solving services');
-        // For image CAPTCHAs, we would need to implement custom solving logic
-        // This is more complex and may require different API endpoints
       } else {
         console.log('No visible CAPTCHA elements found on the page');
         console.log('The CAPTCHA challenge may be triggered by subsequent actions');
       }
       
-      // Wait for CAPTCHA solution to be processed
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      if (solvingAttempted) {
+        // Wait for CAPTCHA solution to be processed with human-like delay
+        const waitTime = 3000 + Math.random() * 2000;
+        console.log(`⏳ Waiting ${Math.round(waitTime/1000)}s for CAPTCHA solution to be processed...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
       
       // Try to proceed with login again if needed
       console.log('Checking if CAPTCHA was solved successfully...');
       const updatedContent = await page.content();
       if (updatedContent.includes('Please provide a valid login captcha')) {
         console.warn('CAPTCHA challenge may still be present after solving attempt');
+        retryCount++;
+        if (retryCount < maxRetries) {
+          console.log(`🔄 CAPTCHA still present, retrying (${retryCount + 1}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
+          continue;
+        } else {
+          console.error('❌ CAPTCHA still present after maximum retries');
+          break;
+        }
       } else {
-        console.log('CAPTCHA appears to have been resolved');
+        console.log('✅ CAPTCHA appears to have been resolved successfully');
+        break; // Success, exit retry loop
       }
       
     } else {
@@ -114,26 +175,51 @@ async function handlePostLoginCaptcha(page: Page, captchaApiKey?: string): Promi
       const recaptchaElements = await page.$$('iframe[src*="recaptcha"], div[class*="recaptcha"], div[id*="recaptcha"]');
       if (recaptchaElements.length > 0 && captchaApiKey) {
         console.log(`Found ${recaptchaElements.length} reCAPTCHA element(s), attempting to solve...`);
-        await page.solveRecaptchas();
-        console.log('reCAPTCHA solving completed');
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        try {
+          await page.solveRecaptchas();
+          console.log('✅ reCAPTCHA solving completed successfully');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          break; // Success, exit retry loop
+        } catch (solveError: any) {
+          console.warn(`⚠️ reCAPTCHA solving failed:`, solveError.message);
+          if (solveError.message?.includes('ERROR_CAPTCHA_UNSOLVABLE')) {
+            retryCount++;
+            if (retryCount < maxRetries) {
+              console.log(`🔄 Retrying reCAPTCHA solving (${retryCount + 1}/${maxRetries})...`);
+              await new Promise(resolve => setTimeout(resolve, 3000 + Math.random() * 2000));
+              continue;
+            }
+          }
+          throw solveError;
+        }
       } else {
         console.log('No CAPTCHA challenges detected on post-login page');
+        break; // No CAPTCHA found, exit retry loop
       }
     }
     
-  } catch (captchaError) {
-    console.warn('Error during post-login CAPTCHA handling:', captchaError);
-    // Take a screenshot for debugging
-    try {
-      const errorScreenshotPath = path.join(__dirname, '..', 'screenshots', `captcha_error_${Date.now()}.png`);
-      await fs.mkdir(path.dirname(errorScreenshotPath), { recursive: true });
-      await page.screenshot({ path: errorScreenshotPath as `${string}.png`, fullPage: true });
-      console.log(`CAPTCHA error screenshot saved to ${errorScreenshotPath}`);
-    } catch (screenshotError) {
-      console.warn('Could not take CAPTCHA error screenshot:', screenshotError);
+    } catch (captchaError) {
+      console.warn(`Error during post-login CAPTCHA handling (attempt ${retryCount + 1}):`, captchaError);
+      // Take a screenshot for debugging
+      try {
+        const errorScreenshotPath = path.join(__dirname, '..', 'screenshots', `captcha_error_${Date.now()}.png`);
+        await fs.mkdir(path.dirname(errorScreenshotPath), { recursive: true });
+        await page.screenshot({ path: errorScreenshotPath as `${string}.png`, fullPage: true });
+        console.log(`CAPTCHA error screenshot saved to ${errorScreenshotPath}`);
+      } catch (screenshotError) {
+        console.warn('Could not take CAPTCHA error screenshot:', screenshotError);
+      }
+      
+      retryCount++;
+      if (retryCount < maxRetries) {
+        console.log(`🔄 Retrying CAPTCHA handling due to error (${retryCount + 1}/${maxRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
+        continue;
+      } else {
+        console.warn('❌ Maximum CAPTCHA retry attempts reached, continuing with scraper...');
+        break;
+      }
     }
-    // Don't throw - continue execution as CAPTCHA solving failure shouldn't stop the entire process
   }
 }
 
@@ -161,17 +247,66 @@ async function scrapeAndUpload(): Promise<void> {
     supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY!); // Use the service role key
     console.log('Supabase client initialized.');
 
-    // Initialize Puppeteer
-    console.log('Launching browser...');
+    // Initialize Puppeteer with enhanced stealth features
+    console.log('Launching browser with stealth configuration...');
     browser = await puppeteer.launch({
       headless: (process.env.HEADLESS_MODE !== 'false'), // Defaults to true, false if 'false'
       args: [
         '--disable-dev-shm-usage', // Common fix for issues in Docker/CI
         '--no-sandbox',
-        '--disable-setuid-sandbox'
+        '--disable-setuid-sandbox',
+        // Enhanced stealth and anti-detection arguments
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=VizDisplayCompositor',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-web-security',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-default-apps',
+        '--disable-popup-blocking',
+        '--disable-prompt-on-repost',
+        '--disable-hang-monitor',
+        '--disable-sync',
+        '--metrics-recording-only',
+        '--no-pings',
+        '--password-store=basic',
+        '--use-mock-keychain',
+        '--disable-component-extensions-with-background-pages'
       ]
     });
     const page: Page = await browser.newPage();
+    
+    // Enhanced stealth configuration
+    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await page.setViewport({ width: 1366, height: 768 });
+    
+    // Hide webdriver property and other automation indicators
+    await page.evaluateOnNewDocument(() => {
+      // Remove webdriver property
+      delete (window as any).navigator.webdriver;
+      
+      // Override the plugins property to mimic a real browser
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5]
+      });
+      
+      // Override the languages property
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en']
+      });
+      
+      // Override the permissions property
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission } as PermissionStatus) :
+          originalQuery(parameters)
+      );
+    });
     console.log('Browser launched and new page created.');
 
     // --- 1. Login to BPU Portal ---

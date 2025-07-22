@@ -149,6 +149,53 @@ async function handlePostLoginCaptcha(page: Page, captchaApiKey?: string, maxRet
         const waitTime = 3000 + Math.random() * 2000;
         console.log(`⏳ Waiting ${Math.round(waitTime/1000)}s for CAPTCHA solution to be processed...`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
+        
+        // CRITICAL FIX: After CAPTCHA is solved, resubmit the login form
+        console.log('🔄 CAPTCHA solved - attempting to proceed with login flow...');
+        
+        // Look for login form or continue button
+        const loginForm = await page.$('#loginForm, form[action*="login"], form[action*="Login"], form');
+        const continueButton = await page.$('button[type="submit"], input[type="submit"], button:contains("Continue"), button:contains("Login")');
+        
+        if (loginForm) {
+          console.log('📝 Found login form - resubmitting after CAPTCHA solution...');
+          try {
+            // Resubmit the form
+            await loginForm.evaluate((form) => (form as HTMLFormElement).submit());
+            console.log('✅ Login form resubmitted successfully');
+            
+            // Wait for navigation after form submission
+            console.log('⏳ Waiting for navigation after CAPTCHA + form submission...');
+            await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 });
+            console.log(`🎯 Navigated to: ${page.url()}`);
+            
+          } catch (navError) {
+            console.warn('⚠️ Navigation timeout after form resubmission, checking current state...');
+            console.log(`Current URL: ${page.url()}`);
+            // Continue - the form submission might have worked even without navigation
+          }
+        } else if (continueButton) {
+          console.log('🔘 Found continue/submit button - clicking after CAPTCHA solution...');
+          try {
+            await continueButton.click();
+            console.log('✅ Continue button clicked successfully');
+            
+            // Wait for navigation after button click
+            console.log('⏳ Waiting for navigation after CAPTCHA + button click...');
+            await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 });
+            console.log(`🎯 Navigated to: ${page.url()}`);
+            
+          } catch (navError) {
+            console.warn('⚠️ Navigation timeout after button click, checking current state...');
+            console.log(`Current URL: ${page.url()}`);
+            // Continue - the button click might have worked even without navigation
+          }
+        } else {
+          console.log('🔍 No form or button found - CAPTCHA may have auto-progressed the flow');
+          // Wait a bit to see if the page updates automatically
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          console.log(`Current URL after CAPTCHA: ${page.url()}`);
+        }
       }
       
       // Try to proceed with login again if needed

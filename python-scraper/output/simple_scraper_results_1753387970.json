@@ -1,0 +1,6 @@
+{
+    "scrape_status": "error",
+    "error": "'Driver' object has no attribute 'get_html'",
+    "timestamp": 1753387969.433598,
+    "url": "https://mymeter.bpu.com/Dashboard"
+}

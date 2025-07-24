@@ -1,0 +1,100 @@
+name: BPU Python Daily Scraper
+
+on:
+  schedule:
+    # Runs at 05:00 UTC every day (10:00 AM UTC = 5:00 AM EST/CDT)
+    - cron: '0 10 * * *'
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
+
+jobs:
+  scrape_bpu_data_python:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        working-directory: ./python-scraper
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Chrome and dependencies
+        run: |
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable xvfb
+
+      - name: Run BPU Python Scraper
+        working-directory: ./python-scraper
+        env:
+          BPU_USERNAME: ${{ secrets.BPU_USERNAME }}
+          BPU_PASSWORD: ${{ secrets.BPU_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          CAPTCHA_API_KEY: ${{ secrets.CAPTCHA_API_KEY }}
+          # Set HEADLESS_MODE to true for CI environments
+          HEADLESS_MODE: 'true'
+          # Set DEBUG_MODE to false for CI
+          DEBUG_MODE: 'false'
+        run: |
+          # Start virtual display for headless browser
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1366x768x24 > /dev/null 2>&1 &
+          sleep 3
+          
+          # Run the scraper
+          python simple_scraper.py
+
+      - name: Upload Downloaded CSV
+        if: always() # Ensures this step runs even if the scraper script fails
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpu-python-downloaded-csv
+          path: |
+            ./python-scraper/downloads/*.csv
+            ./python-scraper/output/*.json
+            ./python-scraper/screenshots/*.png
+          retention-days: 7
+
+      - name: Upload Scraper Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpu-python-scraper-logs
+          path: |
+            ./python-scraper/output/
+            ./python-scraper/screenshots/
+          retention-days: 3
+
+      - name: Send Success Notification to Slack
+        if: success()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_USERNAME: "BPU Python Scraper"
+          SLACK_ICON_EMOJI: ":white_check_mark:"
+          SLACK_COLOR: "good"
+          SLACK_TITLE: "BPU Python Scraper Success!"
+          SLACK_MESSAGE: "The BPU Python data scraper completed successfully! :tada:\nData has been uploaded to Supabase.\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Action Log> | <https://appreciate-frontend.vercel.app/sign-in?redirectedFrom=%2Ftasks|View App>"
+          SLACK_FOOTER: "GitHub Actions | ${{ github.repository }}"
+
+      - name: Send Failure Notification to Slack
+        if: failure()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_USERNAME: "BPU Python Scraper Alert"
+          SLACK_ICON_EMOJI: ":rotating_light:"
+          SLACK_COLOR: "danger"
+          SLACK_TITLE: "URGENT: BPU Python Scraper Failed!"
+          SLACK_MESSAGE: "The BPU Python data scraper job has FAILED. :alert:\nImmediate attention may be required.\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Action Log> | <https://appreciate-frontend.vercel.app/sign-in?redirectedFrom=%2Ftasks|View App>"
+          SLACK_FOOTER: "GitHub Actions | ${{ github.repository }}"

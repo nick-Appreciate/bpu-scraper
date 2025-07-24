@@ -1,0 +1,6 @@
+{
+    "scrape_status": "error",
+    "error": "name 'false' is not defined",
+    "timestamp": 1753385391.135823,
+    "url": "https://mymeter.bpu.com/"
+}

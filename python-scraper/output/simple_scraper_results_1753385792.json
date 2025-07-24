@@ -1,0 +1,6 @@
+{
+    "scrape_status": "error",
+    "error": "BrowserTab.type() got an unexpected keyword argument 'human_like'",
+    "timestamp": 1753385791.853291,
+    "url": "https://mymeter.bpu.com/"
+}

@@ -1,0 +1,6 @@
+{
+    "scrape_status": "error",
+    "error": "'Element' object has no attribute 'strip'",
+    "timestamp": 1753388425.619808,
+    "url": "https://mymeter.bpu.com/Dashboard"
+}

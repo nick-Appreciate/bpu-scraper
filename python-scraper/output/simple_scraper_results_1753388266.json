@@ -1,0 +1,6 @@
+{
+    "scrape_status": "error",
+    "error": "BrowserTab.wait_for_element() got an unexpected keyword argument 'timeout'",
+    "timestamp": 1753388265.434552,
+    "url": "https://mymeter.bpu.com/Dashboard"
+}

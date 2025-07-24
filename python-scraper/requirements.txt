@@ -1,0 +1,4 @@
+botasaurus>=4.0.0
+supabase>=2.0.0
+python-dotenv>=1.0.0
+2captcha-python>=1.1.3

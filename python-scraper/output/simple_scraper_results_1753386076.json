@@ -1,0 +1,6 @@
+{
+    "scrape_status": "error",
+    "error": "Target crashed [code: -32000]",
+    "timestamp": 1753386075.876641,
+    "url": "https://mymeter.bpu.com/Integration/LoginActions"
+}

@@ -1,0 +1,6 @@
+{
+    "scrape_status": "error",
+    "error": "'Driver' object has no attribute 'get_page_source'",
+    "timestamp": 1753387729.9911292,
+    "url": "https://mymeter.bpu.com/Dashboard"
+}

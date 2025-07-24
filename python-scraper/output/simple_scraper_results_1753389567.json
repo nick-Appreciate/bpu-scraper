@@ -1,0 +1,6 @@
+{
+    "scrape_status": "error",
+    "error": "CSV file download timed out or failed",
+    "timestamp": 1753389566.20278,
+    "url": "https://mymeter.bpu.com/Dashboard#"
+}

@@ -24,7 +24,8 @@ BPU_USERNAME = os.getenv('BPU_USERNAME')
 BPU_PASSWORD = os.getenv('BPU_PASSWORD')
 CAPTCHA_API_KEY = os.getenv('CAPTCHA_API_KEY')
 SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+SUPABASE_ANON_KEY = os.getenv('SUPABASE_ANON_KEY')
+SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY')
 
 # Initialize 2captcha solver if API key is available
 solver = None
@@ -35,12 +36,43 @@ else:
     print("⚠️ No CAPTCHA_API_KEY found - CAPTCHA solving disabled")
 
 # Initialize Supabase client if URL and key are available
+# Prefer SERVICE_KEY (bypasses RLS) over ANON_KEY for data uploads
 supabase = None
-if SUPABASE_URL and SUPABASE_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    print(f"✅ Supabase initialized with URL: {SUPABASE_URL[:20]}...")
-else:
-    print("⚠️ No SUPABASE_URL or SUPABASE_KEY found - Supabase upload disabled")
+supabase_key_type = None
+
+if SUPABASE_URL:
+    # Try service key first (bypasses RLS policies)
+    if SUPABASE_SERVICE_KEY:
+        try:
+            supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+            supabase_key_type = "service"
+            print(f"✅ Supabase initialized with URL: {SUPABASE_URL[:20]}...")
+            print(f"✅ Using service key: {SUPABASE_SERVICE_KEY[:8]}... (bypasses RLS)")
+        except Exception as e:
+            print(f"❌ Failed to initialize Supabase with service key: {e}")
+            supabase = None
+    
+    # Fallback to anon key if service key not available
+    if not supabase and SUPABASE_ANON_KEY:
+        try:
+            supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+            supabase_key_type = "anon"
+            print(f"✅ Supabase initialized with URL: {SUPABASE_URL[:20]}...")
+            print(f"⚠️ Using anon key: {SUPABASE_ANON_KEY[:8]}... (subject to RLS policies)")
+        except Exception as e:
+            print(f"❌ Failed to initialize Supabase with anon key: {e}")
+            supabase = None
+
+if not supabase:
+    print("⚠️ Supabase client not initialized - upload disabled")
+    if not SUPABASE_URL:
+        print("   Missing SUPABASE_URL")
+    if not SUPABASE_SERVICE_KEY and not SUPABASE_ANON_KEY:
+        print("   Missing both SUPABASE_SERVICE_KEY and SUPABASE_ANON_KEY")
+    elif not SUPABASE_SERVICE_KEY:
+        print("   Missing SUPABASE_SERVICE_KEY (recommended for data uploads)")
+    elif not SUPABASE_ANON_KEY:
+        print("   Missing SUPABASE_ANON_KEY")
 
 def detect_captcha(driver: Driver):
     """Detect if CAPTCHA is present on the page"""
@@ -520,6 +552,7 @@ def scrape_bpu(driver: Driver, data):
             try:
                 for search_dir in search_directories:
                     if not os.path.exists(search_dir):
+                        print(f"⚠️ Directory does not exist: {search_dir}")
                         continue
                         
                     current_files = os.listdir(search_dir)
@@ -530,22 +563,41 @@ def scrape_bpu(driver: Driver, data):
                     csv_files = [f for f in current_files if f.endswith('.csv')]
                     usage_csv_files = [f for f in csv_files if 'usage' in f.lower()]
                     
+                    print(f"🔍 Found {len(csv_files)} CSV files: {csv_files}")
+                    print(f"🎯 Found {len(usage_csv_files)} usage CSV files: {usage_csv_files}")
+                    
                     target_file = None
                     if usage_csv_files:
                         # Sort by modification time, get most recent
                         usage_files_with_time = [(f, os.path.getmtime(os.path.join(search_dir, f))) for f in usage_csv_files]
                         usage_files_with_time.sort(key=lambda x: x[1], reverse=True)
                         target_file = usage_files_with_time[0][0]
+                        print(f"📈 Selected most recent usage file: {target_file}")
                     elif csv_files:
                         # Fallback to any CSV file
                         csv_files_with_time = [(f, os.path.getmtime(os.path.join(search_dir, f))) for f in csv_files]
                         csv_files_with_time.sort(key=lambda x: x[1], reverse=True)
                         target_file = csv_files_with_time[0][0]
+                        print(f"📄 Selected most recent CSV file: {target_file}")
                     
                     if target_file:
                         downloaded_file = os.path.join(search_dir, target_file)
                         print(f"✅ CSV file detected: {downloaded_file}")
-                        break
+                        # Verify file exists and is readable
+                        if os.path.exists(downloaded_file):
+                            file_size = os.path.getsize(downloaded_file)
+                            print(f"📊 File size: {file_size} bytes")
+                            if file_size > 0:
+                                print(f"🎉 Valid CSV file found, breaking out of polling loop")
+                                break
+                            else:
+                                print(f"⚠️ File is empty, continuing to poll...")
+                                target_file = None
+                                downloaded_file = None
+                        else:
+                            print(f"❌ File path doesn't exist: {downloaded_file}")
+                            target_file = None
+                            downloaded_file = None
                 
                 if downloaded_file:
                     break
@@ -565,28 +617,115 @@ def scrape_bpu(driver: Driver, data):
         parsed_usage_data = []
         
         try:
+            print(f"📖 Attempting to read CSV file: {downloaded_file}")
+            print(f"📊 File exists: {os.path.exists(downloaded_file)}")
+            print(f"📊 File size: {os.path.getsize(downloaded_file)} bytes")
+            
             with open(downloaded_file, 'r', encoding='utf-8') as file:
                 csv_reader = csv.DictReader(file)
                 headers = csv_reader.fieldnames
                 print(f"📊 CSV headers: {headers}")
                 
-                # Parse CSV rows
+                # Parse CSV rows with TypeScript-matching logic
                 for row_num, row in enumerate(csv_reader):
                     if row_num < 5:  # Show first 5 rows for debugging
                         print(f"  Row {row_num + 1}: {dict(row)}")
                     
-                    # Convert row to usage data format
-                    usage_record = {
-                        'date': row.get('Date', ''),
-                        'usage': float(row.get('Usage', 0)) if row.get('Usage', '').replace('.', '').isdigit() else 0,
-                        'meter_reading': float(row.get('Meter Reading', 0)) if row.get('Meter Reading', '').replace('.', '').isdigit() else 0,
-                        'raw_data': dict(row),
-                        'scraped_at': datetime.now().isoformat()
+                    # Normalize keys (lowercase and trim) for robust access - matching TypeScript
+                    normalized_record = {}
+                    for key, value in row.items():
+                        if key:  # Skip None keys
+                            normalized_key = key.lower().strip()
+                            normalized_record[normalized_key] = value
+                    
+                    # Extract data using known CSV headers (after normalization) - matching TypeScript
+                    account_number = normalized_record.get('account number', '')
+                    meter_id = normalized_record.get('meter', '')
+                    start_date_time_string = normalized_record.get('start', '')
+                    name = normalized_record.get('name', '')
+                    location = normalized_record.get('location', '')
+                    address = normalized_record.get('address', '')
+                    estimated_indicator = normalized_record.get('estimated indicator', '')
+                    ccf_value_from_csv = normalized_record.get('ccf', '')  # Raw usage string from CSV 'CCF' column
+                    cost_string_from_csv = normalized_record.get('$', '')  # Raw cost string from CSV '$' column
+                    
+                    # Validate essential fields for primary key - matching TypeScript
+                    if not account_number or not meter_id or not start_date_time_string:
+                        print(f"⚠️ Skipping record due to missing primary key components. "
+                              f"Account: {account_number}, Meter: {meter_id}, Start: {start_date_time_string}. "
+                              f"Original record: {dict(row)}")
+                        continue  # Skip this record
+                    
+                    # Parse date - matching TypeScript logic
+                    try:
+                        # TypeScript uses: new Date(startDateTimeString).toISOString()
+                        # Handle various date formats that might come from CSV
+                        if '/' in start_date_time_string:
+                            # Format like "07/17/2025 12:00:00 AM"
+                            date_part = start_date_time_string.split(' ')[0]  # Get just the date part
+                            parsed_date = datetime.strptime(date_part, '%m/%d/%Y')
+                        else:
+                            # Try parsing as-is
+                            parsed_date = datetime.fromisoformat(start_date_time_string.replace('Z', '+00:00'))
+                        
+                        start_iso = parsed_date.isoformat()
+                    except (ValueError, TypeError) as e:
+                        print(f"⚠️ Error parsing date '{start_date_time_string}': {e}")
+                        start_iso = datetime.now().isoformat()
+                    
+                    # Parse numeric values - matching TypeScript logic
+                    usage_numeric = None
+                    cost_numeric = None
+                    
+                    # Usage: ccfValueFromCsv ? parseFloat(ccfValueFromCsv) : null
+                    if ccf_value_from_csv:
+                        try:
+                            usage_numeric = float(ccf_value_from_csv)
+                        except (ValueError, TypeError):
+                            usage_numeric = None
+                    
+                    # Cost: costStringFromCsv ? parseFloat(costStringFromCsv.replace('$', '')) : null
+                    if cost_string_from_csv:
+                        try:
+                            cost_numeric = float(cost_string_from_csv.replace('$', ''))
+                        except (ValueError, TypeError):
+                            cost_numeric = None
+                    
+                    # Prepare data for Supabase, matching Supabase column names - EXACTLY like TypeScript
+                    supabase_data = {
+                        'Start': start_iso,
+                        'Account Number': account_number,
+                        'Name': name,
+                        'Meter': meter_id,
+                        'Location': location,
+                        'Address': address,
+                        'Estimated Indicator': estimated_indicator,
+                        'CCF': ccf_value_from_csv,  # Map raw CSV 'CCF' (usage string) to Supabase 'CCF' (text) column
+                        '$': cost_string_from_csv,   # Map raw CSV '$' (cost string) to Supabase '$' (text) column
+                        'UOM': 'CCF',  # Unit of Measure
+                        'Usage': usage_numeric,  # Numeric usage to Supabase 'Usage' (numeric) column
+                        'Cost': cost_numeric     # Numeric cost to Supabase 'Cost' (numeric) column
                     }
-                    parsed_usage_data.append(usage_record)
+                    
+                    parsed_usage_data.append(supabase_data)
                     csv_data.append(dict(row))  # Keep original format too
                 
                 print(f"📈 Parsed {len(parsed_usage_data)} usage records")
+                
+                # Deduplicate records based on (Account Number, Meter, Start) - matching TypeScript logic
+                print(f"🔄 Deduplicating records before upload...")
+                unique_records = {}
+                for record in parsed_usage_data:
+                    # Create unique key from primary key components
+                    unique_key = (record['Account Number'], record['Meter'], record['Start'])
+                    if unique_key not in unique_records:
+                        unique_records[unique_key] = record
+                    else:
+                        print(f"⚠️ Duplicate record found and skipped: {unique_key}")
+                
+                # Convert back to list
+                parsed_usage_data = list(unique_records.values())
+                print(f"✅ After deduplication: {len(parsed_usage_data)} unique records")
                     
         except Exception as e:
             print(f"❌ Error reading CSV file: {e}")
@@ -598,20 +737,36 @@ def scrape_bpu(driver: Driver, data):
         if supabase and parsed_usage_data:
             try:
                 print(f"☁️ Uploading {len(parsed_usage_data)} records to Supabase...")
+                print(f"📊 Sample record structure: {parsed_usage_data[0] if parsed_usage_data else 'None'}")
                 
-                # Upload to 'water_usage' table (adjust table name as needed)
-                result = supabase.table('water_usage').upsert(parsed_usage_data).execute()
+                # Upload to 'Meter Readings' table (matching TypeScript scraper)
+                # Use same conflict resolution as TypeScript: 'Account Number, Meter, Start'
+                result = supabase.table('Meter Readings').upsert(
+                    parsed_usage_data,
+                    on_conflict='Account Number,Meter,Start'
+                ).execute()
+                
+                print(f"📤 Supabase response: {result}")
                 
                 if result.data:
                     print(f"✅ Successfully uploaded {len(result.data)} records to Supabase")
+                    print(f"📋 Uploaded records: {result.data[:2] if len(result.data) > 0 else 'None'}...")
                     supabase_upload_success = True
                 else:
                     print("⚠️ Supabase upload returned no data")
+                    print(f"📋 Full result object: {vars(result) if hasattr(result, '__dict__') else result}")
                     
             except Exception as e:
                 print(f"❌ Error uploading to Supabase: {e}")
+                print(f"📋 Error type: {type(e).__name__}")
+                import traceback
+                print(f"📋 Full traceback: {traceback.format_exc()}")
         elif not supabase:
             print("⚠️ Supabase not configured - skipping upload")
+            print(f"   SUPABASE_URL present: {bool(SUPABASE_URL)}")
+            print(f"   SUPABASE_SERVICE_KEY present: {bool(SUPABASE_SERVICE_KEY)}")
+            print(f"   SUPABASE_ANON_KEY present: {bool(SUPABASE_ANON_KEY)}")
+            print(f"   Key type used: {supabase_key_type if supabase else 'None'}")
         elif not parsed_usage_data:
             print("⚠️ No parsed data to upload to Supabase")
         

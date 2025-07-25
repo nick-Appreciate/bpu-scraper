@@ -290,6 +290,128 @@ def human_like_mouse_movement(driver: Driver, selector: str):
         print(f"❌ Mouse movement error for {selector}: {e}")
         return False
 
+def perform_login(driver: Driver, username: str, password: str):
+    """Perform login to BPU website"""
+    try:
+        print("🔑 Starting login process...")
+        
+        # Wait for login form elements
+        driver.wait_for_element('#LoginEmail')
+        driver.wait_for_element('#LoginPassword')
+        
+        # Clear and fill username field with human-like typing
+        driver.run_js("document.querySelector('#LoginEmail').value = '';")
+        for char in username:
+            driver.run_js(f"document.querySelector('#LoginEmail').value += '{char}';")
+            time.sleep(random.uniform(0.08, 0.2))
+        
+        time.sleep(random.uniform(0.5, 1.0))
+        
+        # Clear and fill password field with human-like typing
+        driver.run_js("document.querySelector('#LoginPassword').value = '';")
+        for char in password:
+            driver.run_js(f"document.querySelector('#LoginPassword').value += '{char}';")
+            time.sleep(random.uniform(0.08, 0.2))
+        
+        time.sleep(random.uniform(1.0, 2.0))
+        
+        # Click login button (with reCAPTCHA)
+        driver.click('button.loginBtn')
+        
+        # Wait a moment for any CAPTCHA to appear
+        time.sleep(2)
+        
+        # Check for and handle CAPTCHA if present
+        print("🔍 Checking for CAPTCHA challenge...")
+        if detect_captcha(driver):
+            print("🤖 CAPTCHA detected - attempting to solve...")
+            captcha_solved = handle_captcha_if_present(driver)
+            if captcha_solved:
+                print("✅ CAPTCHA solved successfully")
+                # Click login button again after CAPTCHA is solved
+                time.sleep(1)
+                driver.click('button.loginBtn')
+            else:
+                print("❌ CAPTCHA solving failed")
+        else:
+            print("✅ No CAPTCHA detected")
+        
+        # Wait for login process to complete with multiple checks
+        max_wait_time = 30  # Maximum wait time in seconds
+        check_interval = 2  # Check every 2 seconds
+        elapsed_time = 0
+        
+        print("🕰️ Waiting for login process to complete...")
+        
+        while elapsed_time < max_wait_time:
+            time.sleep(check_interval)
+            elapsed_time += check_interval
+            
+            current_url = driver.current_url
+            page_title = driver.run_js("return document.title;")
+            
+            print(f"🔍 Check {elapsed_time}s: URL={current_url}, Title={page_title}")
+            
+            # Check for success indicators
+            has_dashboard = '/Dashboard' in current_url
+            has_choose_property = driver.is_element_present('#choosePropertyBtn')
+            has_dashboard_element = driver.is_element_present('.dashboard')
+            
+            # Check for intermediate states (login in progress)
+            is_loading = 'Loading' in page_title or '/Integration/LoginActions' in current_url
+            
+            if has_dashboard or has_choose_property or has_dashboard_element:
+                print("✅ Login successful!")
+                driver.save_screenshot("screenshots/login_success.png")
+                return {"status": "success", "message": "Login completed successfully"}
+            
+            # If we're in a loading state, continue waiting
+            if is_loading:
+                print(f"🔄 Login in progress (loading state detected)...")
+                continue
+            
+            # Check for error indicators
+            has_validation_errors = driver.is_element_present('.validation-summary-errors')
+            has_login_error = driver.is_element_present('.LoginErrorMessage')
+            still_on_login = '/Login' in current_url and not is_loading
+            
+            # If we have clear error indicators, fail immediately
+            if has_validation_errors or has_login_error:
+                error_msg = "Login validation error"
+                if has_validation_errors:
+                    error_msg = driver.run_js("return document.querySelector('.validation-summary-errors')?.textContent || 'Validation error';")
+                elif has_login_error:
+                    error_msg = driver.run_js("return document.querySelector('.LoginErrorMessage')?.textContent || 'Login error';")
+                
+                driver.save_screenshot("screenshots/login_error.png")
+                print(f"❌ Login failed: {error_msg}")
+                raise Exception(f"Login failed: {error_msg}")
+        
+        # If we've waited the maximum time, take a final screenshot and check
+        driver.save_screenshot("screenshots/login_timeout.png")
+        current_url = driver.current_url
+        page_title = driver.run_js("return document.title;")
+        
+        print(f"⏰ Login timeout after {max_wait_time}s")
+        print(f"🔍 Final state: URL={current_url}, Title={page_title}")
+        
+        # Final check for success indicators
+        has_dashboard = '/Dashboard' in current_url
+        has_choose_property = driver.is_element_present('#choosePropertyBtn')
+        has_dashboard_element = driver.is_element_present('.dashboard')
+        
+        if has_dashboard or has_choose_property or has_dashboard_element:
+            print("✅ Login successful (detected after timeout)!")
+            return {"status": "success", "message": "Login completed successfully"}
+        else:
+            error_msg = f"Login timeout - final URL: {current_url}, Title: {page_title}"
+            print(f"❌ {error_msg}")
+            raise Exception(error_msg)
+                
+    except Exception as e:
+        print(f"❌ Login error: {e}")
+        return {"error": f"Login error: {e}"}
+
 @browser(
     profile="nicholas",
     tiny_profile=True,
@@ -318,7 +440,7 @@ def scrape_bpu(driver: Driver, data):
         
         # Step 3: Go to login page
         print("🔐 Going to BPU login page...")
-        driver.google_get("https://mymeter.bpu.com")
+        driver.get("https://mymeter.bpu.com")
         time.sleep(3)
 
         # Step 4: Check if we need to login or if we're already logged in
@@ -326,10 +448,19 @@ def scrape_bpu(driver: Driver, data):
         current_url = driver.current_url
         print(f"📍 Current URL before login: {current_url}")
 
-        # Check if we're already on the dashboard/data page (session persistence)
-        if '/Dashboard' in current_url or driver.is_element_present('#choosePropertyBtn') or driver.is_element_present('a.dashboard-data'):
-            print("✅ Already logged in! Site redirected directly to dashboard/data page")
-            print("🚀 Skipping login and proceeding to data extraction...")
+        # Check if we're already logged in (session persistence)
+        # BPU may redirect to /Integration/LoginActions when auto-logging in with stored cookies
+        is_already_logged_in = (
+            '/Dashboard' in current_url or 
+            '/Integration/LoginActions' in current_url or
+            driver.is_element_present('#choosePropertyBtn') or 
+            driver.is_element_present('a.dashboard-data')
+        )
+        
+        if is_already_logged_in:
+            print("✅ Already logged in! Site used stored session/cookies")
+            print(f"📍 Auto-login detected at: {current_url}")
+            print("🚀 Skipping login form and proceeding to data extraction...")
         else:
             print("🔑 Login required - proceeding with login form...")
             
@@ -661,9 +792,8 @@ def scrape_bpu(driver: Driver, data):
                         # TypeScript uses: new Date(startDateTimeString).toISOString()
                         # Handle various date formats that might come from CSV
                         if '/' in start_date_time_string:
-                            # Format like "07/17/2025 12:00:00 AM"
-                            date_part = start_date_time_string.split(' ')[0]  # Get just the date part
-                            parsed_date = datetime.strptime(date_part, '%m/%d/%Y')
+                            # Format like "07/17/2025 12:00:00 AM" - preserve FULL datetime including time
+                            parsed_date = datetime.strptime(start_date_time_string, '%m/%d/%Y %I:%M:%S %p')
                         else:
                             # Try parsing as-is
                             parsed_date = datetime.fromisoformat(start_date_time_string.replace('Z', '+00:00'))

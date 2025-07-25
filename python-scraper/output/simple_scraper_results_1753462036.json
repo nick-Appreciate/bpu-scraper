@@ -1,0 +1,6 @@
+{
+    "scrape_status": "error",
+    "error": "name 'perform_login' is not defined",
+    "timestamp": 1753462036.2963939,
+    "url": "https://mymeter.bpu.com/"
+}

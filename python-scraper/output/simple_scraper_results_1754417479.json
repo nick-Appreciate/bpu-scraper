@@ -1,0 +1,6 @@
+{
+    "scrape_status": "error",
+    "error": "Cannot find element with selector: 'button#downloadSubmit'.",
+    "timestamp": 1754417479.089016,
+    "url": "https://mymeter.bpu.com/Dashboard"
+}
